@@ -1,0 +1,27 @@
+.api-status {
+  width: 71vw;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.api-status > div:first-of-type {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.api-status > div:last-of-type {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.status-box {
+  height: 40px;
+  width: 40px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  -ms-border-radius: 10px;
+  -o-border-radius: 10px;
+}

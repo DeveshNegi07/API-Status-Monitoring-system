@@ -1,0 +1,75 @@
+.tracer-section {
+  height: 100vh;
+  padding: 50px 50px 0px 50px;
+  overflow-y: auto;
+}
+.tracer-section > h2 {
+  font-size: 35px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.log-date {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  margin-bottom: 15px;
+  color: #0075ff;
+}
+.log-date > h4 {
+  font-weight: 200;
+}
+
+.log-data {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.log-data > div {
+  background-color: #090d2b;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 20px;
+  border-radius: 20px;
+  -webkit-border-radius: 20px;
+  -moz-border-radius: 20px;
+  -ms-border-radius: 20px;
+  -o-border-radius: 20px;
+}
+.log-data > div > p:first-of-type {
+  color: #6b6b6b;
+  font-size: 15px;
+  font-weight: 700;
+}
+.response {
+  color: #008000;
+  font-size: 15px;
+  font-weight: 400;
+}
+.log-data > div > h4 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.console-data > div > p {
+  font-size: 15px;
+  font-weight: 200;
+  color: #6b6b6b;
+}
+
+.console-data > div > p > span {
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.console-data {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.logs {
+  margin-bottom: 20px;
+}
