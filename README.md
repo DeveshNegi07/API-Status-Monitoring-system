@@ -82,10 +82,10 @@ The **`apiTracer`** middleware allows any Express backend to automatically **cap
 
 ## 🔹 Installation Steps  
 
-Before using the middleware, make sure you have **`axios`** and **`express-rate-limit`** installed:  
+Before using the middleware, make sure you have **`axios`** and **`rate-limiter-flexible`** installed:  
 
 ```bash
-npm install axios express-rate-limit
+npm install axios rate-limiter-flexible
 ```
 
 ---
@@ -105,8 +105,8 @@ Copy `apiTracerMiddleware.js` into your project under:
 ### **2️⃣ Add the Middleware Code**
 
 ```js
-const rateLimit = require("express-rate-limit");
 const axios = require("axios");
+const { RateLimiterMemory } = require("rate-limiter-flexible");
 
 const methods = [
   "log",
@@ -120,7 +120,6 @@ const methods = [
   "timeEnd",
 ];
 const originalConsole = {};
-// Backup original console methods
 methods.forEach((method) => {
   originalConsole[method] = console[method];
 });
@@ -129,14 +128,15 @@ const url = process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
 
 const apiTracer = () => {
+  // Rate limiters map keyed by apiName for reuse
   const rateLimiters = {};
 
   return async (req, res, next) => {
     const start = Date.now();
     const apiName = req.originalUrl.split("?")[0].split("/")[2];
-
-    // Buffer for this request's logs
     const consoleBuffer = [];
+    let skipLogging = false;
+
     // Override console methods
     methods.forEach((method) => {
       console[method] = (...args) => {
@@ -151,15 +151,13 @@ const apiTracer = () => {
               .join(" "),
           });
         } catch (e) {
-          // Fallback in case JSON.stringify fails
           originalConsole.error("Console buffer error:", e.message);
         }
-        // Use original console (safe reference)
         originalConsole[method](...args);
       };
     });
 
-    // Fetch config for this API
+    // Fetch config
     let configData;
     try {
       const response = await axios.get(`${url}/api/config/${apiName}`);
@@ -168,20 +166,13 @@ const apiTracer = () => {
       console.error("Config get failed:", err.message);
     }
 
-    // If no config exists, create one
+    // Create config if not exists
     if (!configData) {
       try {
         const response = await axios.post(
           `${url}/api/config`,
-          {
-            apiName,
-            startDate: new Date(),
-          },
-          {
-            headers: {
-              "x-api-key": API_KEY,
-            },
-          }
+          { apiName, startDate: new Date() },
+          { headers: { "x-api-key": API_KEY } }
         );
         configData = response.data;
       } catch (err) {
@@ -189,7 +180,7 @@ const apiTracer = () => {
       }
     }
 
-    // Schedule on/off logic
+    // Schedule check
     if (configData && configData.scheduleOnOffEnabled) {
       const now = new Date();
       const [startHour, startMin] = configData.onOffTime.startTime
@@ -204,82 +195,69 @@ const apiTracer = () => {
       endTime.setHours(endHour, endMin, 0, 0);
 
       if (now < startTime || now > endTime) {
-        // Restore original console methods before ending request
-        methods.forEach((method) => {
-          console[method] = originalConsole[method];
-        });
-        return res
-          .status(403)
-          .send("API requests disabled during this scheduled off time");
+        skipLogging = true; // don't log, but continue request
       }
     }
 
-    // Rate limiting logic
+    // Rate limiting with node-rate-limiter-flexible (non-blocking)
     if (
       configData &&
       configData.requestLimitEnabled &&
       configData.limit.requestNumber > 0
     ) {
-      let windowMs = 1000; // default 1 second
-      if (configData.limit.rate === "sec") windowMs = 1000;
-      else if (configData.limit.rate === "hour") windowMs = 60 * 60 * 1000;
-      else if (configData.limit.rate === "day") windowMs = 24 * 60 * 60 * 1000;
-
-      // Check if limiter exists and config version matches
+      // Create a RateLimiterMemory per apiName or reuse existing
       if (
         !rateLimiters[apiName] ||
         rateLimiters[apiName].configVersion !== configData.updatedAt
       ) {
-        // Create new limiter with the latest config
-        rateLimiters[apiName] = rateLimit({
-          windowMs,
-          max: configData.limit.requestNumber,
-          standardHeaders: true,
-          legacyHeaders: false,
-          message: "Too many requests, please try again later.",
+        rateLimiters[apiName] = new RateLimiterMemory({
+          points: configData.limit.requestNumber,
+          duration:
+            configData.limit.rate === "hour"
+              ? 3600
+              : configData.limit.rate === "day"
+              ? 86400
+              : 1, // default seconds
         });
         rateLimiters[apiName].configVersion = configData.updatedAt;
       }
 
-      // Use rate limiter middleware for this request
-      return rateLimiters[apiName](req, res, async () => {
-        await tracerAndNext();
-      });
+      try {
+        await rateLimiters[apiName].consume(req.ip); // consume 1 point per request IP
+      } catch (rateLimiterRes) {
+        // Rate limit exceeded: skip logging but allow request to continue
+        skipLogging = true;
+      }
     }
 
-    // If not rate limiting, just trace and continue
-    await tracerAndNext();
-
-    async function tracerAndNext() {
-      res.on("finish", async () => {
-        // Only post logs if tracerDisabled is false
-        if (configData && configData.tracerDisabled === false) {
-          const logDataPayload = {
-            apiName,
-            statusCode: res.statusCode,
-            responseTime: Date.now() - start,
-            httpMethod: req.method,
-            endpoint: req.originalUrl,
-            timestamp: new Date(),
-            consoleData: consoleBuffer,
-          };
-          try {
-            await axios.post(`${url}/api/log`, logDataPayload, {
-              headers: {
-                "x-api-key": API_KEY,
-              },
-            });
-          } catch (err) {
-            originalConsole.error("Tracer send failed:", err.message);
-          }
+    // Continue with request normally
+    res.on("finish", async () => {
+      if (configData && configData.tracerDisabled === false && !skipLogging) {
+        const logDataPayload = {
+          apiName,
+          statusCode: res.statusCode,
+          responseTime: Date.now() - start,
+          httpMethod: req.method,
+          endpoint: req.originalUrl,
+          timestamp: new Date(),
+          consoleData: consoleBuffer,
+        };
+        try {
+          await axios.post(`${url}/api/log`, logDataPayload, {
+            headers: { "x-api-key": API_KEY },
+          });
+        } catch (err) {
+          originalConsole.error("Tracer send failed:", err.message);
         }
-        // Restore original console methods after request finished
-        methods.forEach((method) => {
-          console[method] = originalConsole[method];
-        });
+      }
+
+      // Restore console methods
+      methods.forEach((method) => {
+        console[method] = originalConsole[method];
       });
-      next();
-    }
+    });
+
+    next();
   };
 };
 
