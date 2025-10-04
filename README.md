@@ -98,7 +98,7 @@ Copy `apiTracerMiddleware.js` into your project under:
 /middleware/apiTracerMiddleware.js
 ```
 
-> ⚠️ Make sure to install **axios** and **express-rate-limit** before using the middleware.
+> ⚠️ Make sure to install **axios** and **rate-limiter-flexible** before using the middleware.
 
 ---
 
