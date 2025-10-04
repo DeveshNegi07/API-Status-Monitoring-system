@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const apiKeyAuth = require("../middleware/apiKeyAuth");
 
 const {
   getAllConfig,
@@ -12,7 +13,7 @@ router.get("/", getAllConfig);
 
 router.get("/:apiName", getConfigByApiName);
 
-router.post("/", createConfig);
+router.post("/", apiKeyAuth, createConfig);
 
 router.patch("/:id", updateConfig);
 
